@@ -4,5 +4,6 @@
 /private-artifacts/
 /artifacts/publish-private/
 /artifacts/
+/.worktrees/
 *.private-key
 *.sshkey
