@@ -1,0 +1,8 @@
+**/bin/
+**/obj/
+/private-build/
+/private-artifacts/
+/artifacts/publish-private/
+/artifacts/
+*.private-key
+*.sshkey
