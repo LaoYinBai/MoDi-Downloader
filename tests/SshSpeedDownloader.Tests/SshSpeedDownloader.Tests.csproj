@@ -23,4 +23,8 @@
     <ProjectReference Include="..\..\src\SshSpeedDownloader.Transport\SshSpeedDownloader.Transport.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\device-auth-v1-vectors.json" />
+  </ItemGroup>
+
 </Project>

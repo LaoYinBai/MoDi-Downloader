@@ -15,7 +15,7 @@ public sealed class IdentityProviderTests
         Assert.Null(result.Identity);
         Assert.Equal(IdentityProviderErrorCode.ProviderNotConfigured, result.ErrorCode);
 
-        var device = DeviceIdentity.FromOpenSshPublicKey("Test device", "ssh-ed25519 AQID");
+        var device = CreateTestDevice("Test device", 1);
         var request = await provider.RequestAccessAsync(device, CancellationToken.None);
         var revoked = await provider.RevokeAuthorizationAsync(device, "credential-id", CancellationToken.None);
         Assert.False(request.IsConfigured);
@@ -43,21 +43,25 @@ public sealed class IdentityProviderTests
     }
 
     [Fact]
-    public void DeviceIdentityIdIsDerivedFromTheStableOpenSshPublicKeyFingerprint()
+    public void DeviceIdentityUsesAnInstallationIdIndependentFromThePublicKeyFingerprint()
     {
-        var first = DeviceIdentity.FromOpenSshPublicKey("MoDi Downloader Desktop", "ssh-ed25519 AQID first-comment");
-        var sameKey = DeviceIdentity.FromOpenSshPublicKey("Renamed device", "ssh-ed25519 AQID another-comment");
-        var otherKey = DeviceIdentity.FromOpenSshPublicKey("MoDi Downloader Desktop", "ssh-ed25519 BAUG");
+        var first = CreateTestDevice("MoDi Downloader Desktop", 1);
+        var sameKeyDifferentInstall = DeviceIdentity.FromOpenSshPublicKey(
+            TestDeviceId(2), "Renamed device", "ssh-ed25519 AQID another-comment");
+        var otherKey = DeviceIdentity.FromOpenSshPublicKey(
+            TestDeviceId(3), "MoDi Downloader Desktop", "ssh-ed25519 BAUG");
 
-        Assert.Equal("device:sha256:A5BYxvLAy0ksUzsKTRTvd8wPeKvMztUofYShogEc+4E", first.DeviceId);
+        Assert.StartsWith("mdp-", first.DeviceId, StringComparison.Ordinal);
+        Assert.Equal(30, first.DeviceId.Length);
         Assert.Equal("SHA256:A5BYxvLAy0ksUzsKTRTvd8wPeKvMztUofYShogEc+4E", first.PublicKeyFingerprint);
-        Assert.Equal(first.DeviceId, sameKey.DeviceId);
+        Assert.NotEqual(first.DeviceId, sameKeyDifferentInstall.DeviceId);
+        Assert.Equal(first.PublicKeyFingerprint, sameKeyDifferentInstall.PublicKeyFingerprint);
         Assert.NotEqual(first.DeviceId, otherKey.DeviceId);
-        Assert.Equal("Renamed device", sameKey.DisplayName);
+        Assert.Equal("Renamed device", sameKeyDifferentInstall.DisplayName);
     }
 
     [Fact]
-    public void DeviceIdentityRejectsAnIdThatIsNotBoundToItsPublicKey()
+    public void DeviceIdentityRejectsLegacyOrMalformedDeviceIdentifiers()
     {
         Assert.Throws<ArgumentException>(() => new DeviceIdentity(
             "device:mac:00-11-22-33-44-55",
@@ -69,7 +73,7 @@ public sealed class IdentityProviderTests
     [Fact]
     public async Task CloudProviderPropagatesAuthorizationFailureWithoutInventingIdentity()
     {
-        var device = DeviceIdentity.FromOpenSshPublicKey("Test device", "ssh-ed25519 AQID");
+        var device = CreateTestDevice("Test device", 4);
         var expected = new ConnectionIdentityResult(
             ConnectionIdentityState.Failed,
             null,
@@ -111,5 +115,15 @@ public sealed class IdentityProviderTests
             DeviceIdentity device,
             string credentialId,
             CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
+    private static DeviceIdentity CreateTestDevice(string displayName, byte seed) =>
+        DeviceIdentity.FromOpenSshPublicKey(TestDeviceId(seed), displayName, "ssh-ed25519 AQID");
+
+    private static string TestDeviceId(byte seed)
+    {
+        var bytes = new byte[16];
+        bytes[0] = seed;
+        return DeviceIdFactory.Create(bytes);
     }
 }

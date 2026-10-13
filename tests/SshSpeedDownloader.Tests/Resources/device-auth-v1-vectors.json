@@ -1,0 +1,34 @@
+{
+  "version": "v1",
+  "vectors": {
+    "admin": {
+      "domain": "MODI-AUTH-ADMIN-V1",
+      "keyId": "admin-vector-01",
+      "challengeId": "challenge-vector-01",
+      "nonce": "nonce-vector-01",
+      "unixTimestamp": 1791892800,
+      "method": "post",
+      "requestTarget": "/v1/admin/access-requests/0123456789abcdef0123456789abcdef/decision",
+      "bodyUtf8": "{\"decision\":\"allow\"}",
+      "bodySha256": "6b838faadcc5ae20ac196a2be7bdcf932f9589a14d7ecbcd9d61e5b94c80d03a",
+      "canonicalUtf8": "MODI-AUTH-ADMIN-V1\nPOST\n/v1/admin/access-requests/0123456789abcdef0123456789abcdef/decision\n6b838faadcc5ae20ac196a2be7bdcf932f9589a14d7ecbcd9d61e5b94c80d03a\nnonce-vector-01\n1791892800",
+      "adminPublicKeySpkiBase64": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEIJo4Y+92aAsAD465oygMLqGTfjvbxvi1gQijzJU0RjV16xYRqqJOLy9iz0PKXo4nm/BS0uoiJcQZ//Ny/1eKOQ==",
+      "signatureBase64": "MEUCIQCRyjHXQ36/+O4HpBeTlDIu+UttylT3uZamf3eoCCkxAAIgNB9b6eZg/SHzALLFeLVsfSD9BdbYMH4k1wsnJs72cIQ="
+    },
+    "device": {
+      "domain": "MODI-AUTH-DEVICE-V1",
+      "keyId": "mdp-aaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "challengeId": "challenge-device-vector",
+      "nonce": "nonce-device-vector",
+      "unixTimestamp": 1791892800,
+      "method": "post",
+      "requestTarget": "/v1/access-requests",
+      "bodyUtf8": "{\"idempotencyKey\":\"vector-request-01\"}",
+      "bodySha256": "867eb16eca21d508777234e89113d466b0a0e262ffd9017d034eef0cb32fd6bc",
+      "canonicalUtf8": "MODI-AUTH-DEVICE-V1\nPOST\n/v1/access-requests\n867eb16eca21d508777234e89113d466b0a0e262ffd9017d034eef0cb32fd6bc\nnonce-device-vector\n1791892800",
+      "deviceOpenSshPublicKey": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBB86Yd0/1itpQGlH0UO71kgeVvGheBgm3FZDj45oqxfSoUS7vOLMBr+NSqqCnbR9Y/kl4b0yiOhkfhO9LPAavCA= vector-device",
+      "devicePublicKeyFingerprint": "SHA256:QK20bOTyV10SOvM0wUUZjSG4ppE1z4tgxUMSKDf/D9A",
+      "signatureBase64": "MEYCIQCDH+KRnFZ2p9eXuTMFwxIbn9HUF0p1kQ7PjX4CPoDu+gIhANFjyi4Axgz5VQzMjX5Izlr49vUrO4J8z9JthS8IdvTy"
+    }
+  }
+}
