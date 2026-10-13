@@ -12,6 +12,7 @@ public interface IPrivatePassphraseStore
 public interface IPrivateIdentityProvisioner
 {
     void StorePassphrase(ReadOnlySpan<char> passphrase);
+    void ForgetPassphrase();
 }
 
 public static class ConnectionIdentityProviderFactory
@@ -109,19 +110,9 @@ public sealed class PrivateIdentityProvider : IConnectionIdentityProvider, IPriv
         _passphrases.SavePassphrase(WindowsCredentialVault.GetTargetName(_profile), passphrase);
     }
 
-    public ValueTask<IdentityProviderOperationResult<bool>> RevokeLocalAuthorizationAsync(
-        CancellationToken cancellationToken)
+    public void ForgetPassphrase()
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        if (_profile is null)
-            return ValueTask.FromResult(new IdentityProviderOperationResult<bool>(
-                false,
-                false,
-                false,
-                IdentityProviderErrorCode.ProviderNotConfigured,
-                "私人身份未配置。"));
-
-        _passphrases.ForgetPassphrase(WindowsCredentialVault.GetTargetName(_profile));
-        return ValueTask.FromResult(new IdentityProviderOperationResult<bool>(true, true, true, null, null));
+        if (_profile is not null)
+            _passphrases.ForgetPassphrase(WindowsCredentialVault.GetTargetName(_profile));
     }
 }

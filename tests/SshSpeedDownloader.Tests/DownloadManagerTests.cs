@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Reflection;
 using SshSpeedDownloader.Core;
 using SshSpeedDownloader.Transport;
 
@@ -8,6 +9,16 @@ namespace SshSpeedDownloader.Tests;
 
 public sealed class DownloadManagerTests
 {
+    [Fact]
+    public void DownloadManagerUsesOnlyTheInjectedTunnelPoolForHttpTraffic()
+    {
+        var constructor = Assert.Single(typeof(DownloadManager).GetConstructors());
+        Assert.Contains(typeof(ITunneledHttpClientPool), constructor.GetParameters().Select(parameter => parameter.ParameterType));
+        Assert.DoesNotContain(typeof(HttpClient), typeof(DownloadManager)
+            .GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
+            .Select(field => field.FieldType));
+    }
+
     [Fact]
     public async Task RangeDownloadWritesTheExactSourceBytesToTheFinalFile()
     {

@@ -14,6 +14,7 @@ public enum ConnectionIdentityState
 {
     Ready,
     CredentialRequired,
+    RequestRequired,
     Pending,
     Rejected,
     Expired,
@@ -38,10 +39,12 @@ public enum IdentityProviderErrorCode
     ApprovalPending,
     AccessRejected,
     RequestExpired,
+    RequestNotFound,
     AuthorizationRevoked,
     CredentialUnavailable,
     AuthenticationFailed,
     NetworkUnavailable,
+    InvalidServerResponse,
     Unknown
 }
 
@@ -373,10 +376,7 @@ public sealed class LocalDeviceIdentity
     public Stream OpenPrivateKeyStream() => _openPrivateKeyStream();
 }
 
-public sealed record DeviceRegistrationRequest(
-    DeviceIdentity Device,
-    DateTimeOffset CreatedUtc,
-    string ProofOfPossession);
+public sealed record DeviceRegistrationRequest(DeviceIdentity Device);
 
 public sealed record DeviceAccessRequest(
     string RequestId,
@@ -424,8 +424,6 @@ public interface IConnectionIdentityProvider
     ConnectionIdentityProviderKind Kind { get; }
 
     ValueTask<ConnectionIdentityResult> AcquireConnectionIdentityAsync(CancellationToken cancellationToken);
-
-    ValueTask<IdentityProviderOperationResult<bool>> RevokeLocalAuthorizationAsync(CancellationToken cancellationToken);
 }
 
 public interface ICloudDeviceAuthorizationClient
@@ -450,27 +448,26 @@ public interface ICloudDeviceAuthorizationClient
         DeviceIdentity device,
         string credentialId,
         CancellationToken cancellationToken);
-
-    Task<IdentityProviderOperationResult<bool>> RevokeLocalAuthorizationAsync(
-        DeviceIdentity device,
-        string credentialId,
-        CancellationToken cancellationToken);
 }
 
 public sealed class CloudApprovedIdentityProvider : IConnectionIdentityProvider
 {
     private readonly ICloudDeviceAuthorizationClient? _client;
     private readonly DeviceIdentity? _device;
+    private string? _currentRequestId;
 
     public CloudApprovedIdentityProvider(
         ICloudDeviceAuthorizationClient? client = null,
-        DeviceIdentity? device = null)
+        DeviceIdentity? device = null,
+        string? currentRequestId = null)
     {
         _client = client;
         _device = device;
+        SetCurrentRequestId(currentRequestId);
     }
 
     public ConnectionIdentityProviderKind Kind => ConnectionIdentityProviderKind.CloudApproved;
+    public string? CurrentRequestId => _currentRequestId;
 
     public async ValueTask<ConnectionIdentityResult> AcquireConnectionIdentityAsync(
         CancellationToken cancellationToken)
@@ -478,36 +475,57 @@ public sealed class CloudApprovedIdentityProvider : IConnectionIdentityProvider
         cancellationToken.ThrowIfCancellationRequested();
         if (_client is null || _device is null)
             return NotConfiguredIdentity();
-        return await _client.AcquireConnectionIdentityAsync(_device, cancellationToken).ConfigureAwait(false);
-    }
+        if (string.IsNullOrWhiteSpace(_currentRequestId))
+        {
+            return new ConnectionIdentityResult(
+                ConnectionIdentityState.RequestRequired,
+                null,
+                null,
+                null,
+                "此设备尚未申请下载器访问权限。 ");
+        }
 
-    public async ValueTask<IdentityProviderOperationResult<bool>> RevokeLocalAuthorizationAsync(
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        if (_client is null || _device is null)
-            return NotConfiguredOperation<bool>("云端设备鉴权服务尚未配置。");
-
-        var status = await AcquireConnectionIdentityAsync(cancellationToken).ConfigureAwait(false);
-        if (status.Identity is null)
-            return new IdentityProviderOperationResult<bool>(
-                status.State != ConnectionIdentityState.NotConfigured,
-                false,
-                false,
+        var status = await GetApprovalStatusAsync(_currentRequestId, cancellationToken).ConfigureAwait(false);
+        if (!status.IsConfigured || !status.Succeeded || status.Value is null)
+        {
+            var unavailableState = status.ErrorCode switch
+            {
+                IdentityProviderErrorCode.ProviderNotConfigured => ConnectionIdentityState.NotConfigured,
+                IdentityProviderErrorCode.AuthorizationRevoked => ConnectionIdentityState.Revoked,
+                IdentityProviderErrorCode.RequestExpired or IdentityProviderErrorCode.RequestNotFound => ConnectionIdentityState.Expired,
+                IdentityProviderErrorCode.DeviceNotRegistered => ConnectionIdentityState.RequestRequired,
+                _ => status.IsConfigured ? ConnectionIdentityState.Failed : ConnectionIdentityState.NotConfigured
+            };
+            return new ConnectionIdentityResult(
+                unavailableState,
+                null,
+                null,
                 status.ErrorCode,
-                status.UserMessage);
-        var credentialId = status.Identity.CredentialStatus.CredentialId;
-        if (string.IsNullOrWhiteSpace(credentialId))
-            return new IdentityProviderOperationResult<bool>(
-                true,
-                false,
-                false,
-                IdentityProviderErrorCode.CredentialUnavailable,
-                "授权提供者没有返回可撤销凭据 ID。 ");
-        return await _client.RevokeLocalAuthorizationAsync(
-            _device,
-            credentialId,
-            cancellationToken).ConfigureAwait(false);
+                status.UserMessage ?? "暂时无法读取云端审批状态。 ");
+        }
+
+        var request = status.Value;
+        var state = request.Status switch
+        {
+            DeviceApprovalStatus.Pending => ConnectionIdentityState.Pending,
+            DeviceApprovalStatus.Rejected => ConnectionIdentityState.Rejected,
+            DeviceApprovalStatus.Expired => ConnectionIdentityState.Expired,
+            DeviceApprovalStatus.Revoked => ConnectionIdentityState.Revoked,
+            DeviceApprovalStatus.Approved => ConnectionIdentityState.Ready,
+            _ => ConnectionIdentityState.Failed
+        };
+        if (state != ConnectionIdentityState.Ready)
+        {
+            return new ConnectionIdentityResult(
+                state,
+                null,
+                request,
+                request.ErrorCode,
+                request.UserMessage ?? StatusMessage(request.Status));
+        }
+
+        var acquired = await _client.AcquireConnectionIdentityAsync(_device, cancellationToken).ConfigureAwait(false);
+        return acquired with { AccessRequest = request };
     }
 
     public Task<IdentityProviderOperationResult<DeviceIdentity>> RegisterDeviceAsync(
@@ -524,9 +542,39 @@ public sealed class CloudApprovedIdentityProvider : IConnectionIdentityProvider
 
     public Task<IdentityProviderOperationResult<DeviceAccessRequest>> RequestAccessAsync(
         DeviceIdentity device,
-        CancellationToken cancellationToken) =>
-        _client?.RequestAccessAsync(device, cancellationToken)
-        ?? Task.FromResult(NotConfiguredOperation<DeviceAccessRequest>("云端设备鉴权服务尚未配置。"));
+        CancellationToken cancellationToken) => RequestAccessCoreAsync(device, cancellationToken);
+
+    private async Task<IdentityProviderOperationResult<DeviceAccessRequest>> RequestAccessCoreAsync(
+        DeviceIdentity device,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_client is null || _device is null)
+            return NotConfiguredOperation<DeviceAccessRequest>("云端设备鉴权服务尚未配置。 ");
+        if (!SameDevice(_device, device))
+        {
+            return new IdentityProviderOperationResult<DeviceAccessRequest>(
+                true, false, null, IdentityProviderErrorCode.AuthenticationFailed,
+                "请求设备身份与本机保存的身份不一致。 ");
+        }
+
+        var registered = await _client.RegisterDeviceAsync(new DeviceRegistrationRequest(device), cancellationToken)
+            .ConfigureAwait(false);
+        if (!registered.IsConfigured || !registered.Succeeded || registered.Value is null)
+            return new IdentityProviderOperationResult<DeviceAccessRequest>(
+                registered.IsConfigured, false, null, registered.ErrorCode, registered.UserMessage);
+        if (!SameDevice(registered.Value, device))
+        {
+            return new IdentityProviderOperationResult<DeviceAccessRequest>(
+                true, false, null, IdentityProviderErrorCode.AuthenticationFailed,
+                "云端返回的设备身份与本机身份不一致。 ");
+        }
+
+        var result = await _client.RequestAccessAsync(device, cancellationToken).ConfigureAwait(false);
+        if (result.Succeeded && result.Value is { } request)
+            _currentRequestId = request.RequestId;
+        return result;
+    }
 
     public Task<IdentityProviderOperationResult<DeviceAccessRequest>> GetApprovalStatusAsync(
         string requestId,
@@ -541,12 +589,28 @@ public sealed class CloudApprovedIdentityProvider : IConnectionIdentityProvider
         _client?.RefreshAuthorizationAsync(device, credentialId, cancellationToken)
         ?? Task.FromResult(NotConfiguredIdentity());
 
-    public Task<IdentityProviderOperationResult<bool>> RevokeAuthorizationAsync(
-        DeviceIdentity device,
-        string credentialId,
-        CancellationToken cancellationToken) =>
-        _client?.RevokeLocalAuthorizationAsync(device, credentialId, cancellationToken)
-        ?? Task.FromResult(NotConfiguredOperation<bool>("云端设备鉴权服务尚未配置。"));
+    public void SetCurrentRequestId(string? requestId)
+    {
+        if (requestId is not null &&
+            (requestId.Length != 32 || requestId.Any(character => character is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))))
+            throw new ArgumentException("Access request ID is invalid.", nameof(requestId));
+        _currentRequestId = requestId;
+    }
+
+    private static bool SameDevice(DeviceIdentity left, DeviceIdentity right) =>
+        StringComparer.Ordinal.Equals(left.DeviceId, right.DeviceId) &&
+        StringComparer.Ordinal.Equals(left.PublicKeyFingerprint, right.PublicKeyFingerprint) &&
+        StringComparer.Ordinal.Equals(left.PublicKey, right.PublicKey);
+
+    private static string StatusMessage(DeviceApprovalStatus status) => status switch
+    {
+        DeviceApprovalStatus.Pending => "设备申请正在等待管理员审批。 ",
+        DeviceApprovalStatus.Approved => "设备已获准访问。 ",
+        DeviceApprovalStatus.Rejected => "设备申请已被拒绝。 ",
+        DeviceApprovalStatus.Expired => "设备申请已过期，请重新申请。 ",
+        DeviceApprovalStatus.Revoked => "设备授权已被管理员撤销。 ",
+        _ => "无法识别设备审批状态。 "
+    };
 
     private static ConnectionIdentityResult NotConfiguredIdentity() => new(
         ConnectionIdentityState.NotConfigured,

@@ -3,7 +3,29 @@
              x:Class="SshSpeedDownloader.Desktop.App"
              xmlns:local="using:SshSpeedDownloader.Desktop"
              RequestedThemeVariant="Light">
-             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
+
+    <Application.Resources>
+        <Color x:Key="PaperColor">#F4F1E7</Color>
+        <Color x:Key="CardPaperColor">#FCFAF2</Color>
+        <Color x:Key="SecondaryPaperColor">#EDE9DC</Color>
+        <Color x:Key="InkBorderColor">#DCD5C3</Color>
+        <Color x:Key="InkTextColor">#242A2D</Color>
+        <Color x:Key="InkMutedColor">#687072</Color>
+        <Color x:Key="InkOrangeColor">#E8863C</Color>
+        <Color x:Key="BridgeGreenColor">#47937F</Color>
+        <Color x:Key="WaterBlueColor">#86BFD8</Color>
+        <Color x:Key="CinnabarColor">#C2452D</Color>
+        <SolidColorBrush x:Key="PaperBrush" Color="{StaticResource PaperColor}" />
+        <SolidColorBrush x:Key="CardPaperBrush" Color="{StaticResource CardPaperColor}" />
+        <SolidColorBrush x:Key="SecondaryPaperBrush" Color="{StaticResource SecondaryPaperColor}" />
+        <SolidColorBrush x:Key="InkBorderBrush" Color="{StaticResource InkBorderColor}" />
+        <SolidColorBrush x:Key="InkTextBrush" Color="{StaticResource InkTextColor}" />
+        <SolidColorBrush x:Key="InkMutedBrush" Color="{StaticResource InkMutedColor}" />
+        <SolidColorBrush x:Key="InkOrangeBrush" Color="{StaticResource InkOrangeColor}" />
+        <SolidColorBrush x:Key="BridgeGreenBrush" Color="{StaticResource BridgeGreenColor}" />
+        <SolidColorBrush x:Key="WaterBlueBrush" Color="{StaticResource WaterBlueColor}" />
+        <SolidColorBrush x:Key="CinnabarBrush" Color="{StaticResource CinnabarColor}" />
+    </Application.Resources>
 
     <Application.DataTemplates>
         <local:ViewLocator />

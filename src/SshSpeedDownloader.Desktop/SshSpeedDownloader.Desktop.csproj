@@ -14,6 +14,7 @@
     <AssemblyName>MoDiDownloader</AssemblyName>
     <Product>MoDi Downloader</Product>
     <MoDiPrivateBuild Condition="'$(MoDiPrivateBuild)' == ''">false</MoDiPrivateBuild>
+    <DefineConstants Condition="'$(MoDiPrivateBuild)' != 'true'">$(DefineConstants);MODI_SHARED_BUILD</DefineConstants>
     <MoDiPrivateIdentityPath Condition="'$(MoDiPrivateBuild)' == 'true' and '$(MoDiPrivateIdentityPath)' == ''">$(MODI_PRIVATE_IDENTITY_PATH)</MoDiPrivateIdentityPath>
     <DefineConstants Condition="'$(MoDiPrivateBuild)' == 'true' and '$(MoDiPrivateIdentityPath)' != ''">$(DefineConstants);MODI_PRIVATE_BUILD</DefineConstants>
     <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>

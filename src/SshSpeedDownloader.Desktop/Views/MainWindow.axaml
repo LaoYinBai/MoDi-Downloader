@@ -10,36 +10,48 @@
         Title="MoDi Downloader"
         Width="1080" Height="760"
         MinWidth="840" MinHeight="600"
-        Background="#F1F5F2"
-        FontFamily="Inter, Microsoft YaHei UI">
+        Background="{StaticResource PaperBrush}"
+        FontFamily="Microsoft YaHei UI">
     <Window.Styles>
         <Style Selector="Border.panel">
-            <Setter Property="Background" Value="#FFFFFF" />
-            <Setter Property="BorderBrush" Value="#DCE7E1" />
+            <Setter Property="Background" Value="{StaticResource CardPaperBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource InkBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="CornerRadius" Value="10" />
             <Setter Property="Padding" Value="14" />
         </Style>
         <Style Selector="TextBlock.label">
             <Setter Property="FontSize" Value="12" />
-            <Setter Property="Foreground" Value="#64756E" />
+            <Setter Property="Foreground" Value="{StaticResource InkMutedBrush}" />
         </Style>
         <Style Selector="TextBlock.value">
-            <Setter Property="Foreground" Value="#17312D" />
+            <Setter Property="Foreground" Value="{StaticResource InkTextBrush}" />
         </Style>
         <Style Selector="Button.primary">
-            <Setter Property="Background" Value="#47937F" />
-            <Setter Property="Foreground" Value="#FFFFFF" />
-            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Background" Value="{StaticResource InkOrangeBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource InkTextBrush}" />
+            <Setter Property="CornerRadius" Value="10" />
             <Setter Property="Padding" Value="14,8" />
         </Style>
         <Style Selector="Button.quiet">
-            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Background" Value="{StaticResource SecondaryPaperBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource InkTextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource InkBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="10" />
             <Setter Property="Padding" Value="10,6" />
         </Style>
         <Style Selector="ProgressBar">
             <Setter Property="Height" Value="7" />
-            <Setter Property="Foreground" Value="#47937F" />
+            <Setter Property="Foreground" Value="{StaticResource BridgeGreenBrush}" />
+            <Setter Property="Background" Value="{StaticResource SecondaryPaperBrush}" />
+        </Style>
+        <Style Selector="TextBlock.error">
+            <Setter Property="Foreground" Value="{StaticResource CinnabarBrush}" />
+        </Style>
+        <Style Selector="TextBlock.network">
+            <Setter Property="Foreground" Value="#477E92" />
+            <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
     </Window.Styles>
 
@@ -47,17 +59,17 @@
         <Border Grid.Row="0" Classes="panel" Padding="16,12">
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
                 <StackPanel Spacing="2" VerticalAlignment="Center">
-                    <TextBlock Text="MoDi Downloader" FontSize="19" FontWeight="SemiBold" Foreground="#17312D" />
+                    <TextBlock Text="MoDi Downloader" FontSize="19" FontWeight="SemiBold" Foreground="{StaticResource InkTextBrush}" />
                     <TextBlock Text="SSH 云端出口 · 文件保存在本机" Classes="label" />
-                    <TextBlock Text="{Binding PrivateBuildNotice}" FontSize="11" Foreground="#9A5C1A" IsVisible="{Binding IsPrivateBuild}" />
+                    <TextBlock Text="{Binding PrivateBuildNotice}" FontSize="11" Foreground="{StaticResource InkOrangeBrush}" IsVisible="{Binding IsPrivateBuild}" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                     <StackPanel Spacing="2" VerticalAlignment="Center" MaxWidth="390">
-                        <TextBlock Text="{Binding LocationText}" Foreground="#285D50" FontWeight="SemiBold" HorizontalAlignment="Right" />
+                        <TextBlock Text="{Binding LocationText}" Foreground="{StaticResource BridgeGreenBrush}" FontWeight="SemiBold" HorizontalAlignment="Right" />
                         <TextBlock Text="{Binding TunnelStatusText}" Classes="label" HorizontalAlignment="Right" />
                     </StackPanel>
                     <TextBlock Text="{Binding TunnelCountText}" Classes="label" VerticalAlignment="Center" />
-                    <TextBlock Text="{Binding TotalSpeedText}" FontWeight="SemiBold" Foreground="#285D50" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding TotalSpeedText}" FontWeight="SemiBold" Foreground="{StaticResource BridgeGreenBrush}" VerticalAlignment="Center" />
                 </StackPanel>
             </Grid>
         </Border>
@@ -69,28 +81,35 @@
                         <StackPanel Spacing="10">
                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                 <StackPanel Spacing="2">
-                                    <TextBlock Text="Aliyun Beijing" FontWeight="SemiBold" FontSize="15" Foreground="#17312D" />
+                                    <TextBlock Text="Aliyun Beijing" FontWeight="SemiBold" FontSize="15" Foreground="{StaticResource InkTextBrush}" />
                                     <TextBlock Text="{Binding TunnelStatusText}" Classes="label" />
                                 </StackPanel>
                                 <Button Grid.Column="1" Classes="quiet" Content="重连" Command="{Binding ReconnectCommand}" IsEnabled="{Binding !IsConnected}" VerticalAlignment="Center" />
                             </Grid>
                             <TextBlock Text="{Binding TunnelCountText}" Classes="label" />
-                            <Border IsVisible="{Binding NeedsCredentialSetup}" Background="#FFF7E8" BorderBrush="#E6CF9B" BorderThickness="1" CornerRadius="6" Padding="10">
-                                <StackPanel Spacing="7">
-                                    <TextBlock Text="{Binding StatusMessage}" Classes="label" TextWrapping="Wrap" Foreground="#6F531F" />
-                                    <TextBox Text="{Binding UnlockPassphrase}" PasswordChar="●" PlaceholderText="私钥口令（只保存到本机凭据管理器）" />
-                                    <Button Classes="primary" Content="保存并连接" Command="{Binding SaveUnlockPassphraseCommand}" />
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="设备授权" Classes="label" />
+                                    <TextBlock Text="{Binding AuthorizationStatusText}" Classes="value" FontWeight="SemiBold" />
                                 </StackPanel>
-                            </Border>
-                            <Button Classes="quiet" Content="撤销本机授权" Command="{Binding RevokeLocalAuthorizationCommand}"
+                                <Button Grid.Column="1" Classes="primary" Content="申请使用"
+                                        Command="{Binding RequestAccessCommand}" IsEnabled="{Binding CanRequestAccess}"
+                                        IsVisible="{Binding !IsPrivateBuild}" VerticalAlignment="Center" />
+                            </Grid>
+                            <StackPanel IsVisible="{Binding NeedsCredentialSetup}" Spacing="7">
+                                <TextBlock Text="{Binding StatusMessage}" Classes="label" TextWrapping="Wrap" Foreground="{StaticResource InkTextBrush}" />
+                                <TextBox Text="{Binding UnlockPassphrase}" PasswordChar="●" PlaceholderText="私钥口令（只保存到本机凭据管理器）" />
+                                <Button Classes="primary" Content="保存并连接" Command="{Binding SaveUnlockPassphraseCommand}" />
+                            </StackPanel>
+                            <Button Classes="quiet" Content="{Binding LocalIdentityActionText}" Command="{Binding RevokeLocalAuthorizationCommand}"
                                     IsVisible="{Binding CanRevokeLocalAuthorization}" />
                         </StackPanel>
                     </Border>
 
                     <Border Classes="panel">
                         <StackPanel Spacing="9">
-                            <TextBlock Text="云端总览" FontWeight="SemiBold" FontSize="15" Foreground="#17312D" />
-                            <TextBlock Text="{Binding TotalSpeedText}" FontSize="28" FontWeight="SemiBold" Foreground="#285D50" />
+                            <TextBlock Text="云端总览" FontWeight="SemiBold" FontSize="15" Foreground="{StaticResource InkTextBrush}" />
+                            <TextBlock Text="{Binding TotalSpeedText}" FontSize="28" FontWeight="SemiBold" Foreground="{StaticResource BridgeGreenBrush}" />
                             <ProgressBar Minimum="0" Maximum="100" Value="{Binding TotalProgress}" />
                             <TextBlock Text="{Binding TotalProgressText}" Classes="label" />
                             <Grid ColumnDefinitions="*,*">
@@ -105,7 +124,7 @@
                             <StackPanel Spacing="8">
                                 <TextBlock Text="{Binding DefaultDownloadDirectory}" Classes="label" TextWrapping="Wrap" />
                                 <TextBlock Text="{Binding HasCustomDirectoryText}" Classes="label" />
-                                <TextBlock Text="{Binding DirectoryMessage}" Foreground="#A43C37" TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding DirectoryMessage}" Classes="error" TextWrapping="Wrap" />
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <Button Classes="quiet" Content="更改默认…" Click="BrowseDefaultFolder_Click" />
                                     <Button Classes="quiet" Content="恢复系统下载" Command="{Binding RestoreSystemDownloadsDirectoryCommand}" />
@@ -143,7 +162,7 @@
             <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*" RowSpacing="9">
                 <Grid ColumnDefinitions="*,Auto" Margin="2,2,2,4">
                     <StackPanel Spacing="2">
-                        <TextBlock Text="下载任务" FontWeight="SemiBold" FontSize="17" Foreground="#17312D" />
+                        <TextBlock Text="下载任务" FontWeight="SemiBold" FontSize="17" Foreground="{StaticResource InkTextBrush}" />
                         <TextBlock Text="动态分片 · 本机写入 · 可暂停续传" Classes="label" />
                     </StackPanel>
                     <TextBlock Grid.Column="1" Text="{Binding Tasks.Count, StringFormat='{}{0} 项'}" Classes="label" VerticalAlignment="Center" />
@@ -174,15 +193,15 @@
                                         <StackPanel Spacing="9">
                                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
                                                 <StackPanel Spacing="3">
-                                                    <TextBlock Text="{Binding FileName}" FontWeight="SemiBold" FontSize="15" Foreground="#17312D" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding FileName}" FontWeight="SemiBold" FontSize="15" Foreground="{StaticResource InkTextBrush}" TextTrimming="CharacterEllipsis" />
                                                     <TextBlock Text="{Binding StatusText}" Classes="label" />
                                                 </StackPanel>
-                                                <TextBlock Grid.Column="1" Text="{Binding PercentText}" FontWeight="SemiBold" Foreground="#285D50" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="1" Text="{Binding PercentText}" FontWeight="SemiBold" Foreground="{StaticResource BridgeGreenBrush}" VerticalAlignment="Center" />
                                             </Grid>
                                             <ProgressBar Minimum="0" Maximum="100" Value="{Binding Progress}" />
                                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                                                 <TextBlock Text="{Binding SizeText}" Classes="label" />
-                                                <TextBlock Grid.Column="1" Text="{Binding SpeedText}" Foreground="#285D50" FontWeight="SemiBold" />
+                                                <TextBlock Grid.Column="1" Text="{Binding SpeedText}" Classes="network" />
                                             </Grid>
                                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                                                 <TextBlock Text="{Binding RemainingText}" Classes="label" />
@@ -214,7 +233,7 @@
                                                     <TextBlock Text="{Binding TargetPath}" Classes="label" TextWrapping="Wrap" />
                                                     <TextBlock Text="{Binding ChunkText}" Classes="label" />
                                                     <TextBlock Text="{Binding RetryText}" Classes="label" />
-                                                    <TextBlock Text="{Binding ErrorText}" Foreground="#A43C37" TextWrapping="Wrap" IsVisible="{Binding HasError}" />
+                                                    <TextBlock Text="{Binding ErrorText}" Classes="error" TextWrapping="Wrap" IsVisible="{Binding HasError}" />
                                                     <ItemsControl ItemsSource="{Binding Segments}">
                                                         <ItemsControl.ItemTemplate>
                                                             <DataTemplate x:DataType="vm:DownloadSegmentViewModel">
@@ -235,7 +254,7 @@
                         </ItemsControl>
                     </ScrollViewer>
                     <StackPanel IsVisible="{Binding !HasTasks}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" MaxWidth="340">
-                        <TextBlock Text="下载队列是空的" FontSize="18" FontWeight="SemiBold" Foreground="#285D50" HorizontalAlignment="Center" />
+                        <TextBlock Text="下载队列是空的" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource BridgeGreenBrush}" HorizontalAlignment="Center" />
                         <TextBlock Text="云端连接后粘贴一个 HTTP 或 HTTPS 下载链接即可开始。" Classes="label" TextWrapping="Wrap" TextAlignment="Center" />
                     </StackPanel>
                 </Grid>

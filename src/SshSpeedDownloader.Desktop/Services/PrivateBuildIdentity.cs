@@ -1,3 +1,4 @@
+#if MODI_PRIVATE_BUILD
 using System.Reflection;
 using SshSpeedDownloader.Core;
 
@@ -38,3 +39,4 @@ public static class PrivateBuildIdentity
         Assembly.GetExecutingAssembly().GetManifestResourceStream(EmbeddedResourceName)
         ?? throw new InvalidOperationException("Private build identity resource is missing.");
 }
+#endif

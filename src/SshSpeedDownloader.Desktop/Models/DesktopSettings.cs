@@ -4,7 +4,7 @@ namespace SshSpeedDownloader.Desktop.Models;
 
 public sealed class DesktopSettings
 {
-    public ConnectionIdentityProviderKind IdentityProviderKind { get; set; } = ConnectionIdentityProviderKind.PrivateIdentity;
+    public string? LastAccessRequestId { get; set; }
     public string DefaultDownloadDirectory { get; set; } = "";
     public bool HasCustomDefaultDownloadDirectory { get; set; }
     public int InitialConcurrency { get; set; } = 8;

@@ -17,12 +17,9 @@ public sealed class IdentityProviderTests
 
         var device = CreateTestDevice("Test device", 1);
         var request = await provider.RequestAccessAsync(device, CancellationToken.None);
-        var revoked = await provider.RevokeAuthorizationAsync(device, "credential-id", CancellationToken.None);
         Assert.False(request.IsConfigured);
         Assert.False(request.Succeeded);
         Assert.Equal(IdentityProviderErrorCode.ProviderNotConfigured, request.ErrorCode);
-        Assert.False(revoked.IsConfigured);
-        Assert.False(revoked.Succeeded);
     }
 
     [Theory]
@@ -80,12 +77,16 @@ public sealed class IdentityProviderTests
             null,
             IdentityProviderErrorCode.NetworkUnavailable,
             "authorization endpoint unavailable");
-        var provider = new CloudApprovedIdentityProvider(new FailingAcquireClient(expected), device);
+        var provider = new CloudApprovedIdentityProvider(
+            new FailingAcquireClient(expected), device, "0123456789abcdef0123456789abcdef");
 
         var actual = await provider.AcquireConnectionIdentityAsync(CancellationToken.None);
 
-        Assert.Equal(expected, actual);
+        Assert.Equal(expected.State, actual.State);
+        Assert.Equal(expected.ErrorCode, actual.ErrorCode);
+        Assert.Equal(expected.UserMessage, actual.UserMessage);
         Assert.Null(actual.Identity);
+        Assert.Equal(DeviceApprovalStatus.Approved, actual.AccessRequest?.Status);
     }
 
     private sealed class FailingAcquireClient(ConnectionIdentityResult result) : ICloudDeviceAuthorizationClient
@@ -100,18 +101,20 @@ public sealed class IdentityProviderTests
 
         public Task<IdentityProviderOperationResult<DeviceAccessRequest>> GetApprovalStatusAsync(
             string requestId,
-            CancellationToken cancellationToken) => throw new NotSupportedException();
+            CancellationToken cancellationToken) => Task.FromResult(new IdentityProviderOperationResult<DeviceAccessRequest>(
+                true,
+                true,
+                new DeviceAccessRequest(
+                    requestId, "mdp-aaaaaaaaaaaaaaaaaaaaaaaaaa", DateTimeOffset.UnixEpoch,
+                    DateTimeOffset.UnixEpoch.AddDays(7), DeviceApprovalStatus.Approved, null, null),
+                null,
+                null));
 
         public Task<ConnectionIdentityResult> AcquireConnectionIdentityAsync(
             DeviceIdentity device,
             CancellationToken cancellationToken) => Task.FromResult(result);
 
         public Task<ConnectionIdentityResult> RefreshAuthorizationAsync(
-            DeviceIdentity device,
-            string credentialId,
-            CancellationToken cancellationToken) => throw new NotSupportedException();
-
-        public Task<IdentityProviderOperationResult<bool>> RevokeLocalAuthorizationAsync(
             DeviceIdentity device,
             string credentialId,
             CancellationToken cancellationToken) => throw new NotSupportedException();

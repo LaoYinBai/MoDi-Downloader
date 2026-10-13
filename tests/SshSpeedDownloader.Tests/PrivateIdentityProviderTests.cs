@@ -40,10 +40,9 @@ public sealed class PrivateIdentityProviderTests
         var store = new FakePassphraseStore("temporary-test-only");
         var provider = new PrivateIdentityProvider(CreateProfile(), store, requiresPassphrase: true);
 
-        var revoked = await provider.RevokeLocalAuthorizationAsync(CancellationToken.None);
+        provider.ForgetPassphrase();
         var afterRevoke = await provider.AcquireConnectionIdentityAsync(CancellationToken.None);
 
-        Assert.True(revoked.Succeeded);
         Assert.Equal(ConnectionIdentityState.CredentialRequired, afterRevoke.State);
         Assert.False(store.ContainsCredential);
     }
