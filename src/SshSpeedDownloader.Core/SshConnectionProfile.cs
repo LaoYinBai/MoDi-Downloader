@@ -13,6 +13,7 @@ public sealed record SshConnectionProfile(
     public IReadOnlyList<string> TrustedHostFingerprints { get; init; } = [];
     public string? PrivateKeyIdentityId { get; init; }
     public Func<Stream>? PrivateKeyStreamProvider { get; init; }
+    public bool SupportsRemoteCommandDiagnostics { get; init; } = true;
 }
 
 public static class SshConnectionProfileValidator

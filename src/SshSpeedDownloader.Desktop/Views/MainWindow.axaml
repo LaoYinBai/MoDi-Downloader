@@ -8,24 +8,25 @@
         x:DataType="vm:MainViewModel"
         x:CompileBindings="False"
         Title="MoDi Downloader"
+        Icon="/Assets/modi-downloader.ico"
         Width="1080" Height="760"
         MinWidth="840" MinHeight="600"
-        Background="#F1F5F2"
+        Background="#F4F1E7"
         FontFamily="Inter, Microsoft YaHei UI">
     <Window.Styles>
         <Style Selector="Border.panel">
-            <Setter Property="Background" Value="#FFFFFF" />
-            <Setter Property="BorderBrush" Value="#DCE7E1" />
+            <Setter Property="Background" Value="#FCFAF2" />
+            <Setter Property="BorderBrush" Value="#DCD5C3" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="8" />
             <Setter Property="Padding" Value="14" />
         </Style>
         <Style Selector="TextBlock.label">
             <Setter Property="FontSize" Value="12" />
-            <Setter Property="Foreground" Value="#64756E" />
+            <Setter Property="Foreground" Value="#5C6862" />
         </Style>
         <Style Selector="TextBlock.value">
-            <Setter Property="Foreground" Value="#17312D" />
+            <Setter Property="Foreground" Value="#242A2D" />
         </Style>
         <Style Selector="Button.primary">
             <Setter Property="Background" Value="#47937F" />
@@ -34,6 +35,7 @@
             <Setter Property="Padding" Value="14,8" />
         </Style>
         <Style Selector="Button.quiet">
+            <Setter Property="Background" Value="#EDE9DC" />
             <Setter Property="CornerRadius" Value="6" />
             <Setter Property="Padding" Value="10,6" />
         </Style>
@@ -41,15 +43,23 @@
             <Setter Property="Height" Value="7" />
             <Setter Property="Foreground" Value="#47937F" />
         </Style>
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="#FFFEFA" />
+            <Setter Property="BorderBrush" Value="#DCD5C3" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
     </Window.Styles>
 
     <Grid Margin="18" RowDefinitions="Auto,*" RowSpacing="14">
-        <Border Grid.Row="0" Classes="panel" Padding="16,12">
+        <Border Grid.Row="0" BorderBrush="#DCD5C3" BorderThickness="0,0,0,1" Padding="0,0,0,16">
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
-                <StackPanel Spacing="2" VerticalAlignment="Center">
-                    <TextBlock Text="MoDi Downloader" FontSize="19" FontWeight="SemiBold" Foreground="#17312D" />
-                    <TextBlock Text="SSH 云端出口 · 文件保存在本机" Classes="label" />
-                    <TextBlock Text="{Binding PrivateBuildNotice}" FontSize="11" Foreground="#9A5C1A" IsVisible="{Binding IsPrivateBuild}" />
+                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <Image Source="/Assets/modi-downloader.png" Width="48" Height="48" />
+                    <StackPanel Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="MoDi Downloader" FontSize="19" FontWeight="SemiBold" Foreground="#242A2D" />
+                        <TextBlock Text="墨堤 · 下载" Classes="label" />
+                        <TextBlock Text="{Binding PrivateBuildNotice}" FontSize="11" Foreground="#9A5C1A" IsVisible="{Binding IsPrivateBuild}" />
+                    </StackPanel>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                     <StackPanel Spacing="2" VerticalAlignment="Center" MaxWidth="390">
@@ -65,16 +75,26 @@
         <Grid Grid.Row="1" ColumnDefinitions="292,*" ColumnSpacing="14">
             <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="12">
-                    <Border Classes="panel">
+                    <Border Padding="6,4,6,16" BorderBrush="#DCD5C3" BorderThickness="0,0,0,1">
                         <StackPanel Spacing="10">
                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                 <StackPanel Spacing="2">
                                     <TextBlock Text="Aliyun Beijing" FontWeight="SemiBold" FontSize="15" Foreground="#17312D" />
-                                    <TextBlock Text="{Binding TunnelStatusText}" Classes="label" />
+                                    <TextBlock Text="{Binding TunnelStatusText}" Classes="label" TextWrapping="Wrap" />
                                 </StackPanel>
                                 <Button Grid.Column="1" Classes="quiet" Content="重连" Command="{Binding ReconnectCommand}" IsEnabled="{Binding !IsConnected}" VerticalAlignment="Center" />
                             </Grid>
                             <TextBlock Text="{Binding TunnelCountText}" Classes="label" />
+                            <StackPanel IsVisible="{Binding IsCloudEdition}" Spacing="7">
+                                <TextBlock Text="{Binding DeviceIdentityText}" Classes="label" TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding AuthorizationStatusText}" Classes="label" TextWrapping="Wrap" />
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Button Classes="primary" Content="{Binding RequestAccessButtonText}"
+                                            Command="{Binding RequestAccessCommand}" IsEnabled="{Binding CanRequestAccess}" />
+                                    <Button Classes="quiet" Content="刷新状态"
+                                            Command="{Binding RefreshApprovalStatusCommand}" IsEnabled="{Binding CanRefreshAccessStatus}" />
+                                </StackPanel>
+                            </StackPanel>
                             <Border IsVisible="{Binding NeedsCredentialSetup}" Background="#FFF7E8" BorderBrush="#E6CF9B" BorderThickness="1" CornerRadius="6" Padding="10">
                                 <StackPanel Spacing="7">
                                     <TextBlock Text="{Binding StatusMessage}" Classes="label" TextWrapping="Wrap" Foreground="#6F531F" />
@@ -87,7 +107,7 @@
                         </StackPanel>
                     </Border>
 
-                    <Border Classes="panel">
+                    <Border Padding="6,4,6,16" BorderBrush="#DCD5C3" BorderThickness="0,0,0,1">
                         <StackPanel Spacing="9">
                             <TextBlock Text="云端总览" FontWeight="SemiBold" FontSize="15" Foreground="#17312D" />
                             <TextBlock Text="{Binding TotalSpeedText}" FontSize="28" FontWeight="SemiBold" Foreground="#285D50" />
@@ -144,7 +164,7 @@
                 <Grid ColumnDefinitions="*,Auto" Margin="2,2,2,4">
                     <StackPanel Spacing="2">
                         <TextBlock Text="下载任务" FontWeight="SemiBold" FontSize="17" Foreground="#17312D" />
-                        <TextBlock Text="动态分片 · 本机写入 · 可暂停续传" Classes="label" />
+                        <TextBlock Text="{Binding TotalProgressText}" Classes="label" />
                     </StackPanel>
                     <TextBlock Grid.Column="1" Text="{Binding Tasks.Count, StringFormat='{}{0} 项'}" Classes="label" VerticalAlignment="Center" />
                 </Grid>
@@ -156,11 +176,10 @@
                             <ComboBox Grid.Column="1" ItemsSource="{Binding ConcurrencyChoices}" SelectedItem="{Binding SelectedConcurrency}" VerticalAlignment="Center" />
                             <Button Grid.Column="2" Classes="primary" Content="加入队列" Command="{Binding AddDownloadCommand}" IsEnabled="{Binding CanAddDownload}" />
                         </Grid>
-                        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                             <TextBox Text="{Binding TaskDownloadDirectory}" IsReadOnly="True" VerticalAlignment="Center" />
                             <Button Grid.Column="1" Classes="quiet" Content="本任务目录…" Click="BrowseTaskFolder_Click" />
                             <CheckBox Grid.Column="2" Content="自动寻优 1–64" IsChecked="{Binding AutoTuneConcurrency}" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="3" Text="无带宽限速" Classes="label" VerticalAlignment="Center" />
                         </Grid>
                     </Grid>
                 </Border>
@@ -236,7 +255,6 @@
                     </ScrollViewer>
                     <StackPanel IsVisible="{Binding !HasTasks}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" MaxWidth="340">
                         <TextBlock Text="下载队列是空的" FontSize="18" FontWeight="SemiBold" Foreground="#285D50" HorizontalAlignment="Center" />
-                        <TextBlock Text="云端连接后粘贴一个 HTTP 或 HTTPS 下载链接即可开始。" Classes="label" TextWrapping="Wrap" TextAlignment="Center" />
                     </StackPanel>
                 </Grid>
             </Grid>

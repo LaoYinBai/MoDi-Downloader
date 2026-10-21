@@ -7,6 +7,10 @@
     <UseWindowsForms>true</UseWindowsForms>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\modi-downloader.ico</ApplicationIcon>
+    <Version>0.1.0</Version>
+    <Description>MoDi cloud-connected download manager</Description>
+    <Authors>MoDi</Authors>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
@@ -22,7 +26,9 @@
 
   <ItemGroup>
     <Folder Include="Models\" />
-    <AvaloniaResource Include="Assets\**" />
+    <AvaloniaResource Include="Assets\**" Exclude="Assets\Audio\**" />
+    <EmbeddedResource Include="Assets\Audio\completion.wav" LogicalName="MoDiDownloader.CompletionSound.wav" />
+    <EmbeddedResource Include="..\..\THIRD_PARTY_NOTICES.md" LogicalName="MoDiDownloader.ThirdPartyNotices.md" />
   </ItemGroup>
 
   <ItemGroup>
@@ -45,6 +51,10 @@
   <ItemGroup Condition="'$(MoDiPrivateBuild)' == 'true' and '$(MoDiPrivateIdentityPath)' != ''">
     <EmbeddedResource Include="$(MoDiPrivateIdentityPath)" LogicalName="SshSpeedDownloader.Desktop.PrivateIdentity.key" />
     <AssemblyMetadata Include="MoDiBuildAudience" Value="Private" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(MoDiPrivateBuild)' != 'true'">
+    <AssemblyMetadata Include="MoDiBuildAudience" Value="Shared" />
   </ItemGroup>
 
   <Target Name="RequireMoDiPrivateIdentityPath" BeforeTargets="PrepareResources"

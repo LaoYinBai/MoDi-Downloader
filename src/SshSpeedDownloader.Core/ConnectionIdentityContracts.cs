@@ -48,15 +48,16 @@ public sealed record DeviceIdentity
     public DeviceIdentity(string deviceId, string displayName, string publicKey, string publicKeyFingerprint)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
-        var derived = DeriveIdentity(publicKey);
-        if (!StringComparer.Ordinal.Equals(deviceId, derived.DeviceId) ||
-            !StringComparer.Ordinal.Equals(publicKeyFingerprint, derived.Fingerprint))
-            throw new ArgumentException("Device ID and fingerprint must match the supplied OpenSSH public key.", nameof(deviceId));
+        if (!DeviceIdFactory.IsValid(deviceId))
+            throw new ArgumentException("Device ID must be a valid mdp- identity.", nameof(deviceId));
+        var fingerprint = DeriveFingerprint(publicKey);
+        if (!StringComparer.Ordinal.Equals(publicKeyFingerprint, fingerprint))
+            throw new ArgumentException("The public-key fingerprint does not match the supplied OpenSSH public key.", nameof(publicKeyFingerprint));
 
         DeviceId = deviceId;
         DisplayName = displayName;
         PublicKey = publicKey.Trim();
-        PublicKeyFingerprint = publicKeyFingerprint;
+        PublicKeyFingerprint = fingerprint;
     }
 
     public string DeviceId { get; }
@@ -64,14 +65,13 @@ public sealed record DeviceIdentity
     public string PublicKey { get; }
     public string PublicKeyFingerprint { get; }
 
-    public static DeviceIdentity FromOpenSshPublicKey(string displayName, string publicKey)
+    public static DeviceIdentity FromOpenSshPublicKey(string deviceId, string displayName, string publicKey)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
-        var derived = DeriveIdentity(publicKey);
-        return new DeviceIdentity(derived.DeviceId, displayName, publicKey, derived.Fingerprint);
+        return new DeviceIdentity(deviceId, displayName, publicKey, DeriveFingerprint(publicKey));
     }
 
-    private static (string DeviceId, string Fingerprint) DeriveIdentity(string publicKey)
+    private static string DeriveFingerprint(string publicKey)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(publicKey);
         var fields = publicKey.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
@@ -92,14 +92,68 @@ public sealed record DeviceIdentity
             throw new ArgumentException("The OpenSSH public key is malformed.", nameof(publicKey));
 
         var fingerprintBody = Convert.ToBase64String(SHA256.HashData(keyBlob)).TrimEnd('=');
-        return ($"device:sha256:{fingerprintBody}", $"SHA256:{fingerprintBody}");
+        return $"SHA256:{fingerprintBody}";
     }
 }
 
-public sealed record DeviceRegistrationRequest(
-    DeviceIdentity Device,
-    DateTimeOffset CreatedUtc,
-    string ProofOfPossession);
+public static class DeviceIdFactory
+{
+    private const string Alphabet = "abcdefghijklmnopqrstuvwxyz234567";
+    private const int RandomByteCount = 16;
+    private const string Prefix = "mdp-";
+
+    public static string Create()
+    {
+        var randomBytes = RandomNumberGenerator.GetBytes(RandomByteCount);
+        try
+        {
+            return Create(randomBytes);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(randomBytes);
+        }
+    }
+
+    public static string Create(ReadOnlySpan<byte> randomBytes)
+    {
+        if (randomBytes.Length != RandomByteCount)
+            throw new ArgumentException("Device IDs require exactly 128 bits of entropy.", nameof(randomBytes));
+
+        Span<char> encoded = stackalloc char[26];
+        uint buffer = 0;
+        var bitCount = 0;
+        var outputIndex = 0;
+        foreach (var value in randomBytes)
+        {
+            buffer = (buffer << 8) | value;
+            bitCount += 8;
+            while (bitCount >= 5)
+            {
+                bitCount -= 5;
+                encoded[outputIndex++] = Alphabet[(int)((buffer >> bitCount) & 31)];
+                buffer &= bitCount == 0 ? 0u : (1u << bitCount) - 1;
+            }
+        }
+
+        if (bitCount > 0)
+            encoded[outputIndex++] = Alphabet[(int)((buffer << (5 - bitCount)) & 31)];
+        if (outputIndex != encoded.Length)
+            throw new InvalidOperationException("Device ID encoding produced an invalid length.");
+
+        return Prefix + new string(encoded);
+    }
+
+    public static bool IsValid(string? deviceId)
+    {
+        if (deviceId is not { Length: 30 } ||
+            !deviceId.StartsWith(Prefix, StringComparison.Ordinal) ||
+            deviceId.AsSpan(Prefix.Length).IndexOfAnyExcept(Alphabet) >= 0)
+            return false;
+
+        return (Alphabet.IndexOf(deviceId[^1]) & 0b11) == 0;
+    }
+}
 
 public sealed record DeviceAccessRequest(
     string RequestId,
@@ -151,10 +205,22 @@ public interface IConnectionIdentityProvider
     ValueTask<IdentityProviderOperationResult<bool>> RevokeLocalAuthorizationAsync(CancellationToken cancellationToken);
 }
 
+public interface ICloudAuthorizationWorkflow
+{
+    string DeviceId { get; }
+    string DeviceDisplayName { get; }
+
+    Task<IdentityProviderOperationResult<DeviceAccessRequest>> RequestAccessAsync(
+        CancellationToken cancellationToken);
+
+    Task<IdentityProviderOperationResult<DeviceAccessRequest>> RefreshAccessStatusAsync(
+        CancellationToken cancellationToken);
+}
+
 public interface ICloudDeviceAuthorizationClient
 {
     Task<IdentityProviderOperationResult<DeviceIdentity>> RegisterDeviceAsync(
-        DeviceRegistrationRequest request,
+        DeviceIdentity device,
         CancellationToken cancellationToken);
 
     Task<IdentityProviderOperationResult<DeviceAccessRequest>> RequestAccessAsync(
@@ -165,22 +231,24 @@ public interface ICloudDeviceAuthorizationClient
         string requestId,
         CancellationToken cancellationToken);
 
+    Task<IdentityProviderOperationResult<DeviceAccessRequest>> GetCurrentAccessRequestAsync(
+        DeviceIdentity device,
+        CancellationToken cancellationToken);
+
     Task<ConnectionIdentityResult> AcquireConnectionIdentityAsync(
         DeviceIdentity device,
         CancellationToken cancellationToken);
 
     Task<ConnectionIdentityResult> RefreshAuthorizationAsync(
         DeviceIdentity device,
-        string credentialId,
         CancellationToken cancellationToken);
 
-    Task<IdentityProviderOperationResult<bool>> RevokeLocalAuthorizationAsync(
+    Task<IdentityProviderOperationResult<bool>> ForgetLocalIdentityAsync(
         DeviceIdentity device,
-        string credentialId,
         CancellationToken cancellationToken);
 }
 
-public sealed class CloudApprovedIdentityProvider : IConnectionIdentityProvider
+public sealed class CloudApprovedIdentityProvider : IConnectionIdentityProvider, ICloudAuthorizationWorkflow
 {
     private readonly ICloudDeviceAuthorizationClient? _client;
     private readonly DeviceIdentity? _device;
@@ -194,6 +262,8 @@ public sealed class CloudApprovedIdentityProvider : IConnectionIdentityProvider
     }
 
     public ConnectionIdentityProviderKind Kind => ConnectionIdentityProviderKind.CloudApproved;
+    public string DeviceId => _device?.DeviceId ?? "";
+    public string DeviceDisplayName => _device?.DisplayName ?? "";
 
     public async ValueTask<ConnectionIdentityResult> AcquireConnectionIdentityAsync(
         CancellationToken cancellationToken)
@@ -211,30 +281,13 @@ public sealed class CloudApprovedIdentityProvider : IConnectionIdentityProvider
         if (_client is null || _device is null)
             return NotConfiguredOperation<bool>("云端设备鉴权服务尚未配置。");
 
-        var status = await AcquireConnectionIdentityAsync(cancellationToken).ConfigureAwait(false);
-        if (status.Identity is null)
-            return new IdentityProviderOperationResult<bool>(
-                status.State != ConnectionIdentityState.NotConfigured,
-                false,
-                false,
-                status.ErrorCode,
-                status.UserMessage);
-        var credentialId = status.Identity.CredentialStatus.CredentialId;
-        if (string.IsNullOrWhiteSpace(credentialId))
-            return new IdentityProviderOperationResult<bool>(
-                true,
-                false,
-                false,
-                IdentityProviderErrorCode.CredentialUnavailable,
-                "授权提供者没有返回可撤销凭据 ID。 ");
-        return await _client.RevokeLocalAuthorizationAsync(
+        return await _client.ForgetLocalIdentityAsync(
             _device,
-            credentialId,
             cancellationToken).ConfigureAwait(false);
     }
 
     public Task<IdentityProviderOperationResult<DeviceIdentity>> RegisterDeviceAsync(
-        DeviceRegistrationRequest request,
+        DeviceIdentity device,
         CancellationToken cancellationToken) =>
         _client is null
             ? Task.FromResult(new IdentityProviderOperationResult<DeviceIdentity>(
@@ -243,7 +296,25 @@ public sealed class CloudApprovedIdentityProvider : IConnectionIdentityProvider
                 null,
                 IdentityProviderErrorCode.ProviderNotConfigured,
                 "云端设备鉴权服务尚未配置。"))
-            : _client.RegisterDeviceAsync(request, cancellationToken);
+            : _client.RegisterDeviceAsync(device, cancellationToken);
+
+    public async Task<IdentityProviderOperationResult<DeviceAccessRequest>> RequestAccessAsync(
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_client is null || _device is null)
+            return NotConfiguredOperation<DeviceAccessRequest>("云端设备鉴权服务尚未配置。");
+
+        var registration = await _client.RegisterDeviceAsync(_device, cancellationToken).ConfigureAwait(false);
+        if (!registration.Succeeded)
+            return new IdentityProviderOperationResult<DeviceAccessRequest>(
+                registration.IsConfigured,
+                false,
+                null,
+                registration.ErrorCode,
+                registration.UserMessage);
+        return await _client.RequestAccessAsync(_device, cancellationToken).ConfigureAwait(false);
+    }
 
     public Task<IdentityProviderOperationResult<DeviceAccessRequest>> RequestAccessAsync(
         DeviceIdentity device,
@@ -257,19 +328,18 @@ public sealed class CloudApprovedIdentityProvider : IConnectionIdentityProvider
         _client?.GetApprovalStatusAsync(requestId, cancellationToken)
         ?? Task.FromResult(NotConfiguredOperation<DeviceAccessRequest>("云端设备鉴权服务尚未配置。"));
 
+    public Task<IdentityProviderOperationResult<DeviceAccessRequest>> RefreshAccessStatusAsync(
+        CancellationToken cancellationToken) =>
+        _device is null
+            ? Task.FromResult(NotConfiguredOperation<DeviceAccessRequest>("本机设备身份尚未配置。"))
+            : _client?.GetCurrentAccessRequestAsync(_device, cancellationToken)
+            ?? Task.FromResult(NotConfiguredOperation<DeviceAccessRequest>("云端设备鉴权服务尚未配置。"));
+
     public Task<ConnectionIdentityResult> RefreshAuthorizationAsync(
         DeviceIdentity device,
-        string credentialId,
         CancellationToken cancellationToken) =>
-        _client?.RefreshAuthorizationAsync(device, credentialId, cancellationToken)
+        _client?.RefreshAuthorizationAsync(device, cancellationToken)
         ?? Task.FromResult(NotConfiguredIdentity());
-
-    public Task<IdentityProviderOperationResult<bool>> RevokeAuthorizationAsync(
-        DeviceIdentity device,
-        string credentialId,
-        CancellationToken cancellationToken) =>
-        _client?.RevokeLocalAuthorizationAsync(device, credentialId, cancellationToken)
-        ?? Task.FromResult(NotConfiguredOperation<bool>("云端设备鉴权服务尚未配置。"));
 
     private static ConnectionIdentityResult NotConfiguredIdentity() => new(
         ConnectionIdentityState.NotConfigured,

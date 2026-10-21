@@ -32,6 +32,9 @@ public partial class MainViewModel : ViewModelBase
     private string? _systemDownloadsDirectory;
     private IConnectionIdentityProvider? _identityProvider;
     private IPrivateIdentityProvisioner? _identityProvisioner;
+    private ICloudAuthorizationWorkflow? _cloudAuthorizationWorkflow;
+    private WindowsDeviceIdentityStore? _deviceIdentityStore;
+    private HttpClient? _authorizationHttpClient;
     private ConnectionIdentityProviderKind _identityProviderKind = ConnectionIdentityProviderKind.PrivateIdentity;
     private CancellationTokenSource? _connectionLoopCancellation;
     private Task? _connectionLoop;
@@ -58,6 +61,9 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty] private string _connectionDetail = "";
     [ObservableProperty] private string _directoryMessage = "";
     [ObservableProperty] private string _identitySourceMessage = "";
+    [ObservableProperty] private string _deviceIdentityText = "";
+    [ObservableProperty] private string _authorizationStatusText = "";
+    [ObservableProperty] private DeviceApprovalStatus? _accessRequestStatus;
     [ObservableProperty] private TunnelStatus _tunnelStatus;
     [ObservableProperty] private double _totalBytesPerSecond;
     [ObservableProperty] private int _activeTaskCount;
@@ -117,10 +123,36 @@ public partial class MainViewModel : ViewModelBase
     public bool HasTasks => Tasks.Count > 0;
     public bool CanAddDownload => IsConnected && TaskDirectoryWritable;
     public bool IsPrivateBuild => PrivateBuildIdentity.HasEmbeddedIdentity;
+    public bool IsCloudEdition => !IsPrivateBuild;
+    public bool CanRequestAccess => IsCloudEdition &&
+        _cloudAuthorizationWorkflow is not null &&
+        !IsBusy &&
+        AccessRequestStatus is not (DeviceApprovalStatus.Pending or DeviceApprovalStatus.Approved or DeviceApprovalStatus.Revoked);
+    public bool CanRefreshAccessStatus => IsCloudEdition && _cloudAuthorizationWorkflow is not null && !IsBusy;
+    public string RequestAccessButtonText => AccessRequestStatus switch
+    {
+        DeviceApprovalStatus.Pending => "申请待批准",
+        DeviceApprovalStatus.Approved => "已获批准",
+        DeviceApprovalStatus.Revoked => "授权已撤销",
+        DeviceApprovalStatus.Rejected or DeviceApprovalStatus.Expired => "重新申请",
+        _ => "申请使用下载器"
+    };
     public bool CanRevokeLocalAuthorization => IsPrivateBuild &&
         _identityProvider?.Kind == ConnectionIdentityProviderKind.PrivateIdentity;
 
     public event EventHandler? ActivateWindowRequested;
+
+    partial void OnIsBusyChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanRequestAccess));
+        OnPropertyChanged(nameof(CanRefreshAccessStatus));
+    }
+
+    partial void OnAccessRequestStatusChanged(DeviceApprovalStatus? value)
+    {
+        OnPropertyChanged(nameof(CanRequestAccess));
+        OnPropertyChanged(nameof(RequestAccessButtonText));
+    }
 
     public async Task InitializeAsync()
     {
@@ -129,18 +161,56 @@ public partial class MainViewModel : ViewModelBase
 
         _loadingSettings = true;
         var settings = await _settingsStore.LoadAsync();
-        _identityProviderKind = settings.IdentityProviderKind;
-        _identityProvider = ConnectionIdentityProviderFactory.Create(
-            _identityProviderKind,
-            PrivateBuildIdentity.CreateProfile(),
-            _credentialStore);
+        _identityProviderKind = IsPrivateBuild
+            ? ConnectionIdentityProviderKind.PrivateIdentity
+            : ConnectionIdentityProviderKind.CloudApproved;
+        if (IsPrivateBuild)
+        {
+            _identityProvider = ConnectionIdentityProviderFactory.Create(
+                _identityProviderKind,
+                PrivateBuildIdentity.CreateProfile(),
+                _credentialStore);
+            IdentitySourceMessage = "本机私有身份 · 口令仅保存于 Windows 凭据管理器";
+            AuthorizationStatusText = "私人身份连接模式。";
+        }
+        else
+        {
+            try
+            {
+                var identityPath = Path.Combine(_settingsRoot, "device-identity.json");
+                _deviceIdentityStore = new WindowsDeviceIdentityStore(identityPath, Environment.MachineName);
+                var device = await _deviceIdentityStore.LoadOrCreateAsync();
+                _authorizationHttpClient = CloudDeviceAuthorizationClient.CreateHttpClient();
+                var cloudClient = new CloudDeviceAuthorizationClient(
+                    _authorizationHttpClient,
+                    _deviceIdentityStore,
+                    CloudAuthorizationConfiguration.CreateDefault());
+                _identityProvider = ConnectionIdentityProviderFactory.Create(
+                    _identityProviderKind,
+                    privateProfile: null,
+                    _credentialStore,
+                    cloudClient,
+                    device);
+                _cloudAuthorizationWorkflow = _identityProvider as ICloudAuthorizationWorkflow;
+                DeviceIdentityText = $"{device.DisplayName} · {device.DeviceId}";
+                IdentitySourceMessage = "共享版设备身份 · 每台设备独立密钥 · 需管理员批准";
+                AuthorizationStatusText = "尚未申请使用权限。";
+            }
+            catch (Exception exception)
+            {
+                _identityProvider = ConnectionIdentityProviderFactory.Create(
+                    _identityProviderKind,
+                    privateProfile: null,
+                    _credentialStore);
+                DeviceIdentityText = "本机设备身份不可用";
+                IdentitySourceMessage = "设备密钥初始化失败；未回退到私人 SSH 身份。";
+                AuthorizationStatusText = SafeExceptionMessage(exception);
+            }
+        }
         _identityProvisioner = _identityProvider as IPrivateIdentityProvisioner;
         OnPropertyChanged(nameof(CanRevokeLocalAuthorization));
-        IdentitySourceMessage = _identityProvider.Kind == ConnectionIdentityProviderKind.PrivateIdentity
-            ? IsPrivateBuild
-                ? "本机私有身份 · 口令仅保存于 Windows 凭据管理器"
-                : "此构建未包含私人 SSH 身份材料。"
-            : "云端设备鉴权接口尚未配置。";
+        OnPropertyChanged(nameof(CanRequestAccess));
+        OnPropertyChanged(nameof(CanRefreshAccessStatus));
 
         HasCustomDefaultDownloadDirectory = settings.HasCustomDefaultDownloadDirectory;
         DefaultDownloadDirectory = settings.HasCustomDefaultDownloadDirectory
@@ -185,6 +255,92 @@ public partial class MainViewModel : ViewModelBase
 
     [RelayCommand]
     private Task ReconnectAsync() => RestartConnectionLoopAsync();
+
+    [RelayCommand]
+    private async Task RequestAccessAsync()
+    {
+        var workflow = _cloudAuthorizationWorkflow;
+        if (workflow is null || !CanRequestAccess)
+        {
+            StatusMessage = "当前构建或设备状态不允许提交新的访问申请。";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var result = await workflow.RequestAccessAsync(CancellationToken.None);
+            if (result.Succeeded && result.Value is not null)
+            {
+                ApplyAccessRequest(result.Value);
+                StatusMessage = "访问申请已提交；批准后会自动建立云端连接。";
+                StartConnectionLoop(restart: false);
+            }
+            else
+            {
+                AuthorizationStatusText = result.UserMessage ?? "申请未能提交；下载器没有切换到本地直连。";
+                StatusMessage = AuthorizationStatusText;
+            }
+        }
+        catch (Exception exception)
+        {
+            AuthorizationStatusText = $"授权服务暂不可用：{SafeExceptionMessage(exception)}";
+            StatusMessage = AuthorizationStatusText;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task RefreshApprovalStatusAsync()
+    {
+        var workflow = _cloudAuthorizationWorkflow;
+        if (workflow is null)
+        {
+            AuthorizationStatusText = "云端设备鉴权服务尚未配置。";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var result = await workflow.RefreshAccessStatusAsync(CancellationToken.None);
+            if (result.Succeeded && result.Value is not null)
+            {
+                ApplyAccessRequest(result.Value);
+                if (result.Value.Status == DeviceApprovalStatus.Approved && !IsConnected)
+                    StartConnectionLoop(restart: false);
+            }
+            else
+            {
+                AuthorizationStatusText = result.UserMessage ?? "无法读取授权状态。";
+            }
+        }
+        catch (Exception exception)
+        {
+            AuthorizationStatusText = $"授权状态读取失败：{SafeExceptionMessage(exception)}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void ApplyAccessRequest(DeviceAccessRequest request)
+    {
+        AccessRequestStatus = request.Status;
+        AuthorizationStatusText = request.Status switch
+        {
+            DeviceApprovalStatus.Pending => "申请待批准；批准后会自动连接。",
+            DeviceApprovalStatus.Approved => "设备已获批 · 长期授权有效。",
+            DeviceApprovalStatus.Rejected => "申请已被拒绝，可重新申请。",
+            DeviceApprovalStatus.Expired => "申请已过期，可重新申请。",
+            DeviceApprovalStatus.Revoked => "此设备授权已撤销，连接将被关闭。",
+            _ => "授权状态未知。"
+        };
+    }
 
     [RelayCommand]
     private async Task SaveUnlockPassphraseAsync()
@@ -426,6 +582,8 @@ public partial class MainViewModel : ViewModelBase
             await SaveSettingsAsync();
             await _downloads.DisposeAsync();
             await _tunnels.DisposeAsync();
+            _authorizationHttpClient?.Dispose();
+            _authorizationHttpClient = null;
         }
         catch (Exception exception)
         {
@@ -495,38 +653,76 @@ public partial class MainViewModel : ViewModelBase
             return;
         }
 
-        ConnectionIdentityResult acquisition;
-        try
+        ConnectionIdentityResult? acquisition = null;
+        while (!cancellationToken.IsCancellationRequested)
         {
-            acquisition = await provider.AcquireConnectionIdentityAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            return;
-        }
-        catch (Exception exception)
-        {
-            SetConnectionMessage($"身份获取失败：{SafeExceptionMessage(exception)}", "");
-            return;
+            try
+            {
+                acquisition = await provider.AcquireConnectionIdentityAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception exception)
+            {
+                SetConnectionMessage($"身份获取失败：{SafeExceptionMessage(exception)}", "");
+                return;
+            }
+
+            if (acquisition.AccessRequest is not null)
+                QueueAccessRequestUpdate(acquisition.AccessRequest);
+            else if (acquisition.State == ConnectionIdentityState.Revoked)
+                Dispatcher.UIThread.Post(() =>
+                {
+                    AccessRequestStatus = DeviceApprovalStatus.Revoked;
+                    AuthorizationStatusText = "此设备授权已撤销。";
+                });
+
+            if (acquisition.State == ConnectionIdentityState.CredentialRequired)
+            {
+                SetCredentialSetupRequired(acquisition.UserMessage ?? "需要保存 SSH 私钥口令。");
+                return;
+            }
+
+            if (acquisition.State == ConnectionIdentityState.Pending ||
+                acquisition.State == ConnectionIdentityState.Failed &&
+                acquisition.ErrorCode == IdentityProviderErrorCode.NetworkUnavailable &&
+                _cloudAuthorizationWorkflow is not null)
+            {
+                SetConnectionMessage(
+                    acquisition.State == ConnectionIdentityState.Pending
+                        ? "申请待手机端批准；下载仍保持关闭。"
+                        : "暂时无法读取授权状态，稍后重试。",
+                    DeviceIdentityText);
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(15), cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+                continue;
+            }
+
+            if (acquisition.State != ConnectionIdentityState.Ready || acquisition.Identity is null)
+            {
+                SetConnectionMessage(acquisition.UserMessage ?? "云端身份不可用。", "");
+                return;
+            }
+            break;
         }
 
-        if (acquisition.State == ConnectionIdentityState.CredentialRequired)
-        {
-            SetCredentialSetupRequired(acquisition.UserMessage ?? "需要保存 SSH 私钥口令。");
+        if (cancellationToken.IsCancellationRequested || acquisition?.Identity is not { } connectionIdentity)
             return;
-        }
-        if (acquisition.State != ConnectionIdentityState.Ready || acquisition.Identity is null)
-        {
-            SetConnectionMessage(acquisition.UserMessage ?? "云端身份不可用。", "");
-            return;
-        }
 
         for (var attempt = 0; !cancellationToken.IsCancellationRequested; attempt++)
         {
             try
             {
                 await _tunnels.ConnectAsync(
-                    acquisition.Identity.SshProfile,
+                    connectionIdentity.SshProfile,
                     passphrase: "",
                     rememberPassphrase: true,
                     cancellationToken).ConfigureAwait(false);
@@ -546,6 +742,7 @@ public partial class MainViewModel : ViewModelBase
                 {
                     SetConnectionMessage("SSH 隧道已连接；公网验证端点不可用，下载仍只走云端出口。", LocationText);
                 }
+                await MonitorCloudAuthorizationAsync(cancellationToken).ConfigureAwait(false);
                 return;
             }
             catch (HostKeyTrustRequiredException)
@@ -584,6 +781,63 @@ public partial class MainViewModel : ViewModelBase
             }
         }
     }
+
+    private async Task MonitorCloudAuthorizationAsync(CancellationToken cancellationToken)
+    {
+        var workflow = _cloudAuthorizationWorkflow;
+        if (workflow is null)
+            return;
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(15), cancellationToken).ConfigureAwait(false);
+                var result = await workflow.RefreshAccessStatusAsync(cancellationToken).ConfigureAwait(false);
+                if (result.Succeeded && result.Value is not null)
+                {
+                    QueueAccessRequestUpdate(result.Value);
+                    if (result.Value.Status == DeviceApprovalStatus.Approved)
+                        continue;
+
+                    await _downloads.PauseAllAsync().ConfigureAwait(false);
+                    await _tunnels.DisconnectAsync().ConfigureAwait(false);
+                    SetConnectionMessage("授权状态已变更，云端隧道已关闭；下载不会切换到本地网络。", "");
+                    return;
+                }
+
+                if (result.ErrorCode == IdentityProviderErrorCode.AuthorizationRevoked)
+                {
+                    await _downloads.PauseAllAsync().ConfigureAwait(false);
+                    await _tunnels.DisconnectAsync().ConfigureAwait(false);
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        AccessRequestStatus = DeviceApprovalStatus.Revoked;
+                        AuthorizationStatusText = "此设备授权已撤销。";
+                    });
+                    SetConnectionMessage("此设备授权已撤销，云端隧道已关闭。", "");
+                    return;
+                }
+
+                SetConnectionMessage(
+                    "暂时无法刷新授权状态；现有流量仍仅通过 SSH 隧道，重连仍需服务端批准。",
+                    LocationText);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception exception)
+            {
+                SetConnectionMessage(
+                    $"授权状态暂不可用：{SafeExceptionMessage(exception)}",
+                    LocationText);
+            }
+        }
+    }
+
+    private void QueueAccessRequestUpdate(DeviceAccessRequest request) =>
+        Dispatcher.UIThread.Post(() => ApplyAccessRequest(request));
 
     private async Task SaveSettingsAsync()
     {

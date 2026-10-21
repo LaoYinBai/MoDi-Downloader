@@ -11,13 +11,6 @@ public static class PrivateBuildIdentity
     public const int Port = 22;
     public const string Username = "admin";
 
-    private static readonly string[] KnownHostPins =
-    [
-        "SHA256:mlPaG+lfjBo92T/OG7fVrVz4sxY+rM+1hTxT+hY9X4k",
-        "SHA256:FjMNC1WcRbxcpiNwiVzEauHETLOWagnixLgQtWoSNyk",
-        "SHA256:rkxyIaeyapIwt1zGy+JPffafL8ClWOYRQIvkvuFiGls"
-    ];
-
     public static bool HasEmbeddedIdentity =>
         Assembly.GetExecutingAssembly().GetManifestResourceInfo(EmbeddedResourceName) is not null;
 
@@ -30,7 +23,7 @@ public static class PrivateBuildIdentity
         {
             PrivateKeyIdentityId = IdentityId,
             PrivateKeyStreamProvider = OpenPrivateKey,
-            TrustedHostFingerprints = KnownHostPins
+            TrustedHostFingerprints = CloudAuthorizationConfiguration.TrustedRelayHostKeyPins
         };
     }
 

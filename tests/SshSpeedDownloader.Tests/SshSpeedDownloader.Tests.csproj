@@ -16,6 +16,8 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Compile Include="..\..\src\SshSpeedDownloader.Desktop\Services\CompletionSoundClip.cs" Link="CompletionSoundClip.cs" />
+    <EmbeddedResource Include="..\..\src\SshSpeedDownloader.Desktop\Assets\Audio\completion.wav" LogicalName="Test.Completion.wav" />
   </ItemGroup>
 
   <ItemGroup>

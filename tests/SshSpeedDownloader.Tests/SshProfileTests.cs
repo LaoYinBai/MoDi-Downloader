@@ -50,4 +50,14 @@ public sealed class SshProfileTests
 
         Assert.True(SshConnectionProfileValidator.TryValidate(profile, out _));
     }
+
+    [Fact]
+    public void RemoteCommandDiagnosticCanBeDisabledForRestrictedForwardOnlyProfiles()
+    {
+        var normal = new SshConnectionProfile("example.com", 22, "admin", "C:\\keys\\id", "SHA256:pin");
+        var relay = normal with { Username = "modi-relay", SupportsRemoteCommandDiagnostics = false };
+
+        Assert.True(normal.SupportsRemoteCommandDiagnostics);
+        Assert.False(relay.SupportsRemoteCommandDiagnostics);
+    }
 }

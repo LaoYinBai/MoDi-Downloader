@@ -1,23 +1,24 @@
-# MoDi Downloader 身份与授权边界
+# MoDi Downloader 身份与授权
 
-## 当前路径
+## 共享版流程
 
-HTTP 下载、Range 分片、文件落盘和续传只依赖 `ITunneledHttpClientPool`；不读取身份来源，也不改变网络路由。应用启动时由 `ConnectionIdentityProviderFactory` 按本地设置选择 `IConnectionIdentityProvider`，再把已验证的 `SshConnectionProfile` 交给 SSH 隧道层。
+共享版只使用 CloudApprovedIdentityProvider。首次运行在本机生成 mdp- 加 128 位随机 Base32 设备 ID，并生成独立的 ECDSA P-256 SSH 密钥。私钥 DER 仅以 Windows CurrentUser DPAPI 保护形式写入 %LOCALAPPDATA%\MoDiDownloader\device-identity.json；签名和 SSH.NET 使用时短暂解密到进程内存。设备 ID、公钥、指纹、申请 ID 和幂等键不是凭据。
 
-- `PrivateIdentityProvider` 是当前私人版提供者。固定云端配置和 known-hosts 指纹由 `PrivateBuildIdentity` 提供；私有构建可把加密私钥作为程序集资源注入。口令只从 Windows Credential Manager 读取，首次解锁时由用户在本机遮罩输入框提供并保存。程序设置、清单、日志和报告不保存口令或私钥内容。
-- `IPrivatePassphraseStore` 隔离口令来源，`WindowsCredentialVault` 是 Windows 实现。私人授权撤销只清理本机凭据并断开本机隧道，不声称能撤销或终止服务端已建立的 SSH 会话。
-- `CloudApprovedIdentityProvider` 和 `ICloudDeviceAuthorizationClient` 是未来协议边界。当前没有客户端或云端服务实现时一律返回 `NotConfigured` / 明确失败；不生成伪造设备、审批状态或 SSH 凭据。配置源通过 `ConnectionIdentityProviderKind` 选择。
+用户点击“申请使用下载器”后，客户端向 https://auth.modiconnect.cn/ 注册公钥并创建访问申请。每个 API 操作先获取一次性 challenge，再以 MODI-AUTH-DEVICE-V1 规范化请求、SHA-256 body hash 和 ECDSA DER 签名。API 只收公钥，不接收私钥。待批准状态每 15 秒检查；收到 Approved 后才创建 modi-relay SSH profile。Pending、Rejected、Expired、Revoked、网络错误均不会创建 SSH 身份，也不会让 HTTP 下载回退到本地网络。
 
-## 未来协议模型
+获批后文件 HTTP/HTTPS 与动态分片仍只使用既有 SSH.NET SOCKS5 通道；公网域名 API 仅处理设备注册、申请和状态，不代理下载流量。SSH 主机密钥使用固定 pin。下载文件始终直接写入用户本机。
 
-`DeviceIdentity` 的 `DeviceId` 应由随机持久设备身份或设备公钥指纹派生；MAC 地址不是凭证。`DeviceRegistrationRequest` 包含公钥与 `ProofOfPossession`，服务端必须验证请求者持有对应私钥。`DeviceAccessRequest` 包含申请 ID、创建时间、有效期、审批状态、错误码及可展示原因。`ConnectionCredentialStatus` 和 `ServerConnectionConfiguration` 分离授权有效期与服务连接信息。
+每台设备只保存自己的 DPAPI 设备私钥；共享安装包不嵌入管理员 SSH 私钥、设备私钥或云端口令。DPAPI 不防护同一 Windows 用户权限下的恶意软件或运行时内存检查，这是本地设备密钥模型的已知边界。
 
-当前合法审批迁移由 `DeviceApprovalStateMachine` 限定：Pending 可变为 Approved、Rejected、Expired 或 Revoked；Approved 可被撤销；Rejected、Expired、Revoked 为终态。Windows 与 Android 的 MoDi Monitor 未来应调用同一云端管理 API，管理员身份与权限由服务器验证，不能信任客户端声明。
+管理员在 MoDi Monitor 中使用 Android Keystore 签名批准、拒绝或撤销。服务端 SQLite 保存公钥、设备状态、访问申请、通知事件和审计记录。Approved 长期有效，直到管理员撤销；服务端的 AuthorizedKeysCommand 仅在认证时返回获批公钥。撤销会阻止新 SSH 认证，Downloader 在可访问控制 API 时检测到撤销后暂停任务并关闭现有本地隧道；如果客户端离线，已建立的 SSH 连接要等连接关闭或服务端终止才消失。
 
-## 未来云端部署约束
+## 私人版
 
-- 设备首次注册时在本机生成并保留私钥；普通注册/审批 API 只接收公钥和签名挑战，不上传私钥。
-- 每台设备使用独立身份与独立下载中转账号/等效隔离；服务端只允许所需的 TCP 动态转发，禁用 Shell、TTY 和不必要文件访问。
-- 服务端需限制代理目标，阻止访问云主机本机、内网和云平台元数据地址；审核注册、申请、批准、拒绝、撤销操作并留审计记录。
-- 删除授权公钥本身不一定中止已有 SSH 连接。云端撤销必须由服务器侧短期凭证、连接强制关闭或等效机制保证在有界时间内生效。
-- MoDi Monitor 可消费待审批事件、展示申请详情并发起批准/拒绝/单设备撤销；API 服务端负责管理员鉴权。当前不修改 MoDi Monitor、不部署服务、不开放端口。
+只有显式设置 MoDiPrivateBuild=true 且构建时提供本机身份材料时，才启用 PrivateIdentityProvider。该私有产物包含可提取的加密 SSH 身份材料，只供本人使用，严禁作为共享 Release 发布。私人版不改变 HTTP 下载器的隧道强制策略。
+
+## 故障与降级
+
+- API、SQLite、签名、SSH 主机 pin 或 SSH 隧道失败时，状态明确失败；下载器不创建直连 HttpClient。
+- 断线时现有分片调度和续传逻辑保持不变，只有已批准身份可以重连。
+- 本机身份文件损坏或 DPAPI 无法解密时失败关闭；不会静默生成新 ID 或覆盖旧身份。
+- 清除本机身份只删除本机 DPAPI 文件，不会撤销服务器上的长期授权记录；服务端撤销必须由 Monitor 管理员签名操作完成。

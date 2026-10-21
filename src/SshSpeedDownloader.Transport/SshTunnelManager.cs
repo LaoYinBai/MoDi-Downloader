@@ -127,22 +127,29 @@ public sealed class SshTunnelManager : ITunneledHttpClientPool, IAsyncDisposable
 
     public async Task<ConnectionDiagnostic> TestConnectionAsync(CancellationToken cancellationToken)
     {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(12));
+        var diagnosticToken = timeout.Token;
         SshTunnelConnection primary;
+        SshConnectionProfile profile;
         lock (_stateLock)
         {
             primary = _connections.FirstOrDefault(connection => connection.IsConnected)
                 ?? throw new TunnelUnavailableException("尚未建立 SSH 隧道。");
+            profile = _profile ?? throw new TunnelUnavailableException("SSH 身份已清除。");
         }
 
-        var identityTask = primary.ReadServerIdentityAsync(cancellationToken);
+        var identityTask = profile.SupportsRemoteCommandDiagnostics
+            ? primary.ReadServerIdentityAsync(diagnosticToken)
+            : Task.FromResult("受限 SSH 转发");
         using var lease = AcquireHttpClient();
         using var response = await lease.HttpClient.GetAsync(
             "https://www.cloudflare.com/cdn-cgi/trace",
             HttpCompletionOption.ResponseHeadersRead,
-            cancellationToken).ConfigureAwait(false);
+            diagnosticToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
-        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(diagnosticToken).ConfigureAwait(false);
         var ipLine = body.Split('\n').FirstOrDefault(line => line.StartsWith("ip=", StringComparison.Ordinal));
         var address = ipLine is null ? null : ipLine[3..].Trim();
         if (address is null || !IPAddress.TryParse(address, out var egressIp))

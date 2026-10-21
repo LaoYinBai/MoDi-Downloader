@@ -392,7 +392,13 @@ internal sealed class DownloadJobState
         double rate;
         lock (_rateSync)
         {
-            if (_lastUiTicks == 0)
+            if (status != DownloadTaskStatus.Downloading)
+            {
+                _smoothedBytesPerSecond = 0;
+                _lastUiTicks = now;
+                _lastUiBytes = received;
+            }
+            else if (_lastUiTicks == 0)
             {
                 _lastUiTicks = now;
                 _lastUiBytes = received;
@@ -409,10 +415,6 @@ internal sealed class DownloadJobState
                         : (_smoothedBytesPerSecond * 0.65) + (instant * 0.35);
                     _lastUiTicks = now;
                     _lastUiBytes = received;
-                }
-                else if (status is not (DownloadTaskStatus.Downloading or DownloadTaskStatus.Reconnecting))
-                {
-                    _smoothedBytesPerSecond = 0;
                 }
             }
             rate = _smoothedBytesPerSecond;

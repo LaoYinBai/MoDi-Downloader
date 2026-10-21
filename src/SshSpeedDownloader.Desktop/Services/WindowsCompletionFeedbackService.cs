@@ -1,4 +1,3 @@
-using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using SshSpeedDownloader.Core;
 using Forms = System.Windows.Forms;
@@ -22,7 +21,7 @@ public sealed class WindowsCompletionFeedbackService : IDisposable
         {
             _notificationIcon = new Forms.NotifyIcon
             {
-                Icon = System.Drawing.SystemIcons.Application,
+                Icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? System.Drawing.SystemIcons.Application,
                 Text = "MoDi Downloader",
                 Visible = true
             };
@@ -78,10 +77,17 @@ public sealed class WindowsCompletionFeedbackService : IDisposable
 
     private static class PcmCompletionChime
     {
-        private const int SampleRate = 22_050;
-        private const double DurationSeconds = 0.38;
         private const uint SoundMemory = 0x0004;
         private const uint SoundNoDefault = 0x0002;
+        private static readonly Lazy<byte[]> Clip = new(() =>
+        {
+            using var source = typeof(WindowsCompletionFeedbackService).Assembly
+                .GetManifestResourceStream("MoDiDownloader.CompletionSound.wav")
+                ?? throw new InvalidDataException("The completion sound resource is unavailable.");
+            using var bytes = new MemoryStream();
+            source.CopyTo(bytes);
+            return bytes.ToArray();
+        });
 
         public static void Play(int volumePercent)
         {
@@ -90,45 +96,12 @@ public sealed class WindowsCompletionFeedbackService : IDisposable
 
             try
             {
-                var wav = CreateWave(Math.Clamp(volumePercent, 0, 100));
+                var wav = CompletionSoundClip.WithVolume(Clip.Value, volumePercent);
                 _ = PlaySound(wav, IntPtr.Zero, SoundMemory | SoundNoDefault);
             }
             catch
             {
             }
-        }
-
-        private static byte[] CreateWave(int volumePercent)
-        {
-            var sampleCount = (int)(SampleRate * DurationSeconds);
-            var dataLength = sampleCount * sizeof(short);
-            var wave = new byte[44 + dataLength];
-            "RIFF"u8.CopyTo(wave);
-            BinaryPrimitives.WriteInt32LittleEndian(wave.AsSpan(4), wave.Length - 8);
-            "WAVE"u8.CopyTo(wave.AsSpan(8));
-            "fmt "u8.CopyTo(wave.AsSpan(12));
-            BinaryPrimitives.WriteInt32LittleEndian(wave.AsSpan(16), 16);
-            BinaryPrimitives.WriteInt16LittleEndian(wave.AsSpan(20), 1);
-            BinaryPrimitives.WriteInt16LittleEndian(wave.AsSpan(22), 1);
-            BinaryPrimitives.WriteInt32LittleEndian(wave.AsSpan(24), SampleRate);
-            BinaryPrimitives.WriteInt32LittleEndian(wave.AsSpan(28), SampleRate * sizeof(short));
-            BinaryPrimitives.WriteInt16LittleEndian(wave.AsSpan(32), sizeof(short));
-            BinaryPrimitives.WriteInt16LittleEndian(wave.AsSpan(34), 16);
-            "data"u8.CopyTo(wave.AsSpan(36));
-            BinaryPrimitives.WriteInt32LittleEndian(wave.AsSpan(40), dataLength);
-
-            var volume = volumePercent / 100d;
-            for (var sample = 0; sample < sampleCount; sample++)
-            {
-                var time = sample / (double)SampleRate;
-                var attack = Math.Min(1, time / 0.008);
-                var decay = Math.Exp(-5.8 * time);
-                var tone = Math.Sin(2 * Math.PI * 880 * time) + 0.42 * Math.Sin(2 * Math.PI * 1320 * time);
-                var value = (short)Math.Clamp(tone * attack * decay * volume * 4_900, short.MinValue, short.MaxValue);
-                BinaryPrimitives.WriteInt16LittleEndian(wave.AsSpan(44 + sample * sizeof(short)), value);
-            }
-
-            return wave;
         }
 
         [DllImport("winmm.dll", EntryPoint = "PlaySoundW", SetLastError = true)]
