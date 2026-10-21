@@ -2,8 +2,11 @@ param([string]$InnoCompiler = "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'SharedPublishValidation.psm1') -Force
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$project = Join-Path $root 'src\SshSpeedDownloader.Desktop\SshSpeedDownloader.Desktop.csproj'
+$version = ([xml][IO.File]::ReadAllText($project)).SelectSingleNode('/Project/PropertyGroup/Version').InnerText
+if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'A stable numeric release version is required.' }
 $publish = Join-Path $root 'artifacts\publish\win-x64'
-& dotnet publish (Join-Path $root 'src\SshSpeedDownloader.Desktop\SshSpeedDownloader.Desktop.csproj') `
+& dotnet publish $project `
     -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true `
     -p:IncludeNativeLibrariesForSelfExtract=true -p:MoDiPrivateBuild=false -o $publish --nologo
 if ($LASTEXITCODE -ne 0) { throw "Shared publish failed ($LASTEXITCODE)." }
@@ -18,6 +21,6 @@ if ($resources | Where-Object { $_ -match 'PrivateIdentity|PrivateBuild' }) { th
 if ('MoDiDownloader.CompletionSound.wav' -notin $resources) { throw 'Packaged completion sound missing.' }
 Assert-MoDiSharedPublishDirectory $publish | Out-Null
 if (-not (Test-Path -LiteralPath $InnoCompiler -PathType Leaf)) { throw 'Inno Setup was not found.' }
-& $InnoCompiler '/DSharedAudienceVerified=1' "/DPublishDir=$publish" (Join-Path $root 'installer\MoDiDownloader.iss')
+& $InnoCompiler '/DSharedAudienceVerified=1' "/DPublishDir=$publish" "/DAppVersion=$version" (Join-Path $root 'installer\MoDiDownloader.iss')
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed ($LASTEXITCODE)." }
 'SHARED_AUDIENCE=PASS PRIVATE_RESOURCES_ABSENT=PASS SINGLE_FILE=PASS COMPLETION_SOUND=PASS'

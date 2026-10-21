@@ -104,6 +104,8 @@ public partial class MainViewModel : ViewModelBase
     public ObservableCollection<DownloadTaskViewModel> Tasks { get; } = [];
     public int[] ConcurrencyChoices { get; } = [1, 2, 4, 8, 16, 32, 64];
     public bool IsConnected => TunnelStatus.State == TunnelState.Connected;
+    public string ApplicationVersionText => typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? "unknown";
+    public string WindowTitle => $"MoDi Downloader {ApplicationVersionText}";
     public string LocationText => "Aliyun Beijing";
     public string TunnelStatusText => TunnelStatus.State switch
     {

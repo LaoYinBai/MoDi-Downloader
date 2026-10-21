@@ -8,7 +8,7 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\modi-downloader.ico</ApplicationIcon>
-    <Version>0.1.0</Version>
+    <Version>1.0.0</Version>
     <Description>MoDi cloud-connected download manager</Description>
     <Authors>MoDi</Authors>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>

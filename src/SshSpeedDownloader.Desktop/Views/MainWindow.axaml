@@ -7,7 +7,7 @@
         x:Class="SshSpeedDownloader.Desktop.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         x:CompileBindings="False"
-        Title="MoDi Downloader"
+        Title="{Binding WindowTitle}"
         Icon="/Assets/modi-downloader.ico"
         Width="1080" Height="760"
         MinWidth="840" MinHeight="600"
@@ -57,7 +57,7 @@
                     <Image Source="/Assets/modi-downloader.png" Width="48" Height="48" />
                     <StackPanel Spacing="2" VerticalAlignment="Center">
                         <TextBlock Text="MoDi Downloader" FontSize="19" FontWeight="SemiBold" Foreground="#242A2D" />
-                        <TextBlock Text="墨堤 · 下载" Classes="label" />
+                        <TextBlock Text="{Binding ApplicationVersionText, StringFormat='墨堤 · 下载  v{0}'}" Classes="label" />
                         <TextBlock Text="{Binding PrivateBuildNotice}" FontSize="11" Foreground="#9A5C1A" IsVisible="{Binding IsPrivateBuild}" />
                     </StackPanel>
                 </StackPanel>

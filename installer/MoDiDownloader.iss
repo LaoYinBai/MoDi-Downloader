@@ -1,4 +1,6 @@
-#define AppVersion "0.1.0"
+#ifndef AppVersion
+  #define AppVersion "1.0.0"
+#endif
 #ifndef SharedAudienceVerified
   #error Use tools/BuildMoDiDownloaderSetup.ps1 to validate the shared payload first.
 #endif
